@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <meta charset="utf-8">
+  <title>Clever | Portal</title>
+  <base href="https://cdn.jsdelivr.net/gh/genizy/cg-rip@main/buildnow-gg/">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+
+  <style>
+    /* 1. RESET & THEME */
+    body, html {
+      margin: 0 !important;
+      padding: 0 !important;
+      background-color: #000000 !important;
+      overflow: hidden !important;
+      width: 100%;
+      height: 100%;
+      font-family: Arial, sans-serif;
+    }
+
+    /* 2. THE TOP BAR - FORCED PURE WHITE */
+    #topbar {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100% !important;
+      height: 60px !important;
+      background-color: #ffffff !important;
+      background: #ffffff !important;
+      display: flex !important;
+      align-items: center !important;
+      padding: 0 15px !important;
+      z-index: 1000000 !important;
+      box-sizing: border-box !important;
+      border: none !important;
+    }
+
+    #topbar img {
+      height: 40px !important;
+      margin-right: 12px !important;
+    }
+
+    #topbar a {
+      color: #000000 !important;
+      text-decoration: none !important;
+      font-size: 20px !important;
+      font-weight: 500 !important;
+    }
+
+    /* 3. GAME & LOADING LAYOUT */
+    #loading-text {
+      position: absolute;
+      top: 100px; /* Below the topbar */
+      width: 100%;
+      color: white; /* Changed to white since background is black */
+      font-size: 48px;
+      font-family: cursive;
+      text-align: center;
+      z-index: 10;
+    }
+
+    #unity-canvas {
+      position: fixed !important;
+      top: 60px !important; /* Offset for topbar */
+      left: 0 !important;
+      width: 100% !important;
+      height: calc(100% - 60px) !important;
+      outline: none;
+      background: #000;
+    }
+  </style>
+</head>
+
+<body class="noselect">
+
+  <div id="topbar">
+    <img src="https://lh3.googleusercontent.com/a-/ALV-UjWQneu0wwz9oqOIrJuC-rEk16wbmHPB_n6DEY2AUPRoiQYTQZs=s240-p-k-rw-no" alt="Logo">
+    <a href="https://sites.google.com/view/bobsgwebsite/home">Clever | Portal</a>
+  </div>
+
+  <div id="loading-text">LOADING...</div>
+  <canvas id="unity-canvas"></canvas>
+
+  <script>
+    const SPLIT_MAP = {
+      "7db022abd161455e3cc5f207e75d294b.wasm": null, 
+      "ab8dd356a41a2943639294657a0990f8.data": null
+    };
+
+    // --- Asset Merging Logic ---
+    async function mergeParts(baseUrl) {
+      const parts = [];
+      for (let i = 1; i <= 99; i++) {
+        const testUrl = baseUrl + ".part" + i;
+        try {
+          const head = await fetch(testUrl, { method: "HEAD" });
+          if (!head.ok) break;
+          parts.push(testUrl);
+        } catch { break; }
+      }
+      if (parts.length === 0) return baseUrl;
+      const buffers = await Promise.all(parts.map(async (u) => {
+        const r = await fetch(u);
+        return new Uint8Array(await r.arrayBuffer());
+      }));
+      const total = buffers.reduce((a, b) => a + b.length, 0);
+      const merged = new Uint8Array(total);
+      let offset = 0;
+      for (const b of buffers) { merged.set(b, offset); offset += b.length; }
+      return URL.createObjectURL(new Blob([merged]));
+    }
+
+    async function preMergeAll() {
+      const map = {};
+      const files = Object.entries(SPLIT_MAP);
+      const total = files.length;
+      let done = 0;
+      const loadingText = document.getElementById("loading-text");
+
+      for (const [file, _] of files) {
+        const merged = await mergeParts("Build/" + file);
+        map[file] = merged;
+        done++;
+        loadingText.innerText = `LOADING... ${Math.floor((done/total)*100)}%`;
+      }
+      loadingText.style.display = "none";
+      return map;
+    }
+
+    (async () => {
+      const mergedMap = await preMergeAll();
+      const origFetch = window.fetch;
+      
+      window.fetch = async function(resource, options) {
+        if (typeof resource === "string") {
+          const key = resource.split("/").pop();
+          if (mergedMap[key]) return origFetch(mergedMap[key], options);
+        }
+        return origFetch(resource, options);
+      };
+
+      const canvas = document.querySelector("#unity-canvas");
+      
+      // 4. THE 360-SPIN FIX (Pointer Lock)
+      canvas.addEventListener("mousedown", () => {
+        canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
+        canvas.requestPointerLock();
+      });
+
+      const loaderUrl = "Build/7a2dbded24d57e056180125b1583e7c4.loader.js";
+      const config = {
+        dataUrl: "Build/ab8dd356a41a2943639294657a0990f8.data",
+        frameworkUrl: "Build/91a2bfcec140bc524100478b99a4f6d7.framework.js",
+        codeUrl: "Build/7db022abd161455e3cc5f207e75d294b.wasm",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "BuildNow GG",
+        productName: "BuildNow GG",
+        productVersion: "1.0.0"
+      };
+
+      const script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = () => {
+        createUnityInstance(canvas, config, (progress) => {}).then((unityInstance) => {
+          window.gameInstance = unityInstance;
+        });
+      };
+      document.body.appendChild(script);
+    })();
+
+    function resizeCanvas() {
+      const canvas = document.getElementById("unity-canvas");
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight - 60;
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+  </script>
+</body>
+</html>
